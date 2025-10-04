@@ -16,7 +16,7 @@ on:
       skipTests:
         description: "Whether tests should be skipped"
         required: true
-        default: "default"
+        default: "true"
         type: choice
         options:
           - 'default'
