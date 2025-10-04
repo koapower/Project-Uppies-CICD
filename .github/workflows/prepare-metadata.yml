@@ -8,7 +8,7 @@ on:
         required: true
       runnerMacos:
         type: string
-        required: true
+        required: false
       projectName:
         type: string
         required: true
