@@ -44,7 +44,7 @@ concurrency:
 
 jobs:
   free-disk-space:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runnerMain }}
     steps:
 
     - name: Free Disk Space (Ubuntu)
