@@ -68,7 +68,7 @@ jobs:
     steps:
       - name: Resolve runners
         id: resolve
-        uses: .github/actions/resolve-runners@main
+        uses: koapower/Project-Uppies-CICD/.github/actions/resolve-runners@main
         with:
           main: ${{ vars.MAIN_RUNNER }}
           macos: ${{ vars.MACOS_RUNNER }}
@@ -130,7 +130,7 @@ jobs:
       - resolve_runners
       - validation
     if: ${{ needs.validation.outputs.should_run == 'true'}}
-    uses: .github/workflows/prepare-metadata.yml@main
+    uses: koapower/Project-Uppies-CICD/.github/workflows/prepare-metadata.yml@main
     with:
       runnerMain: ${{ needs.resolve_runners.outputs.main }}
       unityVersion: ${{ vars.UNITY_VERSION }}
@@ -148,7 +148,7 @@ jobs:
       - resolve_runners
       - prepare_metadata
     if: ${{ needs.validation.outputs.should_run == 'true'}}
-    uses: .github/workflows/build-version-tagger.yml@main
+    uses: koapower/Project-Uppies-CICD/.github/workflows/build-version-tagger.yml@main
     with:
       runnerMain: ${{ needs.resolve_runners.outputs.main }}
       buildType: ${{ needs.prepare_metadata.outputs.buildType }}
