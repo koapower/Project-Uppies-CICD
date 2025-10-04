@@ -64,6 +64,7 @@ jobs:
         swap-storage: true
 
   group_build_targets:
+    needs: [ free-disk-space ]
     uses: ./.github/workflows/group-build-targets-by-os.yml
     with:
       runnerMain: ${{ inputs.runnerMain }}
