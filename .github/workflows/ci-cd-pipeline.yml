@@ -111,7 +111,7 @@ jobs:
       always() &&
       needs.unpack_inputs.outputs.testsOnly != 'true' &&
       (needs.run_tests.result == 'success' || needs.run_tests.result == 'skipped')
-    uses: avalin/unity-ci-templates/.github/workflows/step-2-build.yml@v1
+    uses: ./.github/workflows/step-2-build.yml@main
     with:
       # If the event is a push with a tag, force buildType to "release"; otherwise, use the input.
       runnerMain: ${{ inputs.runnerMain }}
