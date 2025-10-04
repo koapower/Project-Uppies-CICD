@@ -1,0 +1,119 @@
+name: 📦 Step 3 - Release
+
+on:
+  workflow_call:
+    inputs:
+      runnerMain:
+        type: string
+        required: true
+      buildType:
+        description: "Build type: 'preview' | 'release_candidate' | 'release'"
+        type: string
+        required: true
+      buildVersion:
+        description: "The version/tag name (e.g., v1.2.3)"
+        type: string
+        required: true
+      projectName:
+        description: "Project name used in the artifact"
+        type: string
+        required: true
+      buildTargets:
+        description: "JSON array of buildTargets to expect artifacts for"
+        type: string
+        required: true
+      combineArtifacts:
+        description: "Whether to upload the combined artifact to the release"
+        type: string
+        default: "false"
+        required: false
+      skipPerBuildTargetArtifacts:
+        description: "Whether to skip uploading per-platform artifacts"
+        type: string
+        default: "false"
+        required: false
+    outputs:
+      releaseErrorMessage:
+        description: "Error message if release failed"
+        value: ${{ jobs.publish.outputs.releaseErrorMessage }}
+
+jobs:
+  publish:
+    if: ${{ inputs.buildType == 'release' || inputs.buildType == 'release_candidate' }}
+    name: 📤 Publish GitHub Release
+    runs-on: ${{ inputs.runnerMain }}
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      releaseErrorMessage: ${{ steps.error-handler.outputs.releaseErrorMessage }}
+
+    steps:
+      - name: 📁 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 📥 Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: .
+
+      - name: 📝 Create GitHub Release
+        id: create_release
+        uses: avalin/unity-ci-templates/.github/actions/create-release@main
+        with:
+          version: ${{ inputs.buildVersion }}
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🧮 Upload Per-Platform Artifacts
+        uses: avalin/unity-ci-templates/.github/actions/upload-per-build-target-artifacts@main
+        with:
+          project: ${{ inputs.projectName }}
+          version: ${{ inputs.buildVersion }}
+          releaseId: ${{ steps.create_release.outputs.release_id }}
+          repository: ${{ github.repository }}
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          buildTargets: ${{ inputs.buildTargets }}
+
+      - name: 🧮 Upload Combined Artifact
+        if: ${{ inputs.combineArtifacts == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ inputs.buildVersion }}"
+          PROJECT="${{ inputs.projectName }}"
+          COMBINED_PATH="${PROJECT}-${VERSION}"
+          COMBINED_ZIP="${PROJECT}-${VERSION}-all-platforms.zip"
+
+          RELEASE_ID="${{ steps.create_release.outputs.release_id }}"
+
+          if [ -d "$COMBINED_PATH" ]; then
+            echo "📦 Zipping contents of: $COMBINED_PATH → $COMBINED_ZIP"
+            cd "$COMBINED_PATH"
+            zip -r "../$COMBINED_ZIP" .
+            cd -
+
+            echo "📤 Uploading $COMBINED_ZIP to release ID $RELEASE_ID"
+            curl -s -X POST \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Content-Type: application/zip" \
+              --data-binary @"$COMBINED_ZIP" \
+              "https://uploads.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets?name=$COMBINED_ZIP"
+          else
+            echo "ℹ️ No combined build artifact found — skipping."
+          fi
+
+      - name: 🛠️ Capture Release Errors
+        if: failure()
+        id: error-handler
+        run: |
+          ERROR_MESSAGE="Unknown release failure"
+
+          if ! ls * >/dev/null 2>&1; then
+            ERROR_MESSAGE="No artifacts found"
+          elif ! jq -e .id response.json >/dev/null 2>&1; then
+            ERROR_MESSAGE="Failed to create or fetch GitHub Release"
+          else
+            ERROR_MESSAGE="One or more upload steps failed"
+          fi
+
+          echo "releaseErrorMessage=$ERROR_MESSAGE" >> "$GITHUB_OUTPUT"

@@ -1,0 +1,33 @@
+name: Download Per-Build-Target From Build
+
+description: Downloads per-build-target artifacts from the build step.
+
+inputs:
+  artifactDir:
+    description: "Destination directory for artifacts"
+    required: true
+  projectName:
+    description: "Project name"
+    required: true
+  version:
+    description: "Version"
+    required: true
+  requiredBuildTargets:
+    description: "JSON array of required build targets"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Make script executable
+      shell: bash
+      run: chmod +x "${{ github.action_path }}/download-per-build-target-artifacts-from-build.sh"
+
+    - name: Run download-per-build-target script
+      shell: bash
+      run: |
+          "${{ github.action_path }}/download-per-build-target-artifacts-from-build.sh" \
+          "${{ inputs.artifactDir }}" \
+          "${{ inputs.projectName }}" \
+          "${{ inputs.version }}" \
+          '${{ inputs.requiredBuildTargets }}'

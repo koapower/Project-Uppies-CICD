@@ -1,0 +1,72 @@
+name: Resolve Build Profile
+description: Resolve the correct Unity Build Profile based on build target, build type, and Unity version.
+
+inputs:
+  buildTarget:
+    description: The Unity build target (e.g., StandaloneWindows, Android)
+    required: true
+  buildType:
+    description: The build type (e.g., preview, release_candidate, release)
+    required: true
+  unityVersion:
+    description: The Unity Editor version (e.g., 6000.0.48f1)
+    required: true
+  configPath:
+    description: (Optional) Path to override the default build profiles JSON file
+    default: ".github/config/build-profiles.json"
+    required: false
+
+outputs:
+  profile:
+    description: The resolved Build Profile name (empty if none)
+    value: ${{ steps.resolve.outputs.profile }}
+
+runs:
+  using: composite
+  steps:
+    - name: Read and resolve Build Profile
+      id: resolve
+      shell: bash
+      run: |
+        BUILD_TARGET="${{ inputs.buildTarget }}"
+        BUILD_TYPE="${{ inputs.buildType }}"
+        UNITY_VERSION="${{ inputs.unityVersion }}"
+        INPUT_CONFIG_PATH="${{ inputs.configPath }}"
+        DEFAULT_CONFIG_PATH="${GITHUB_ACTION_PATH}/build-profiles.json"
+
+        # Check Unity version first
+        if [[ ! "$UNITY_VERSION" =~ ^6 && ! "$UNITY_VERSION" =~ ^6000 ]]; then
+          echo "⚠️ Unity version $UNITY_VERSION does not support Build Profiles; skipping."
+          echo "profile=" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        # Use provided configPath if it exists, else fallback
+        if [ -n "$INPUT_CONFIG_PATH" ] && [ -f "$INPUT_CONFIG_PATH" ]; then
+          CONFIG_PATH="$INPUT_CONFIG_PATH"
+          echo "ℹ️ Using provided config path: $CONFIG_PATH"
+        else
+          if [ -n "$INPUT_CONFIG_PATH" ]; then
+            echo "⚠️ Provided config path $INPUT_CONFIG_PATH not found! Falling back to internal default."
+          else
+            echo "ℹ️ No config path provided. Using internal default."
+          fi
+          CONFIG_PATH="$DEFAULT_CONFIG_PATH"
+        fi
+
+        if [ ! -f "$CONFIG_PATH" ]; then
+          echo "❌ No config file found at fallback path $CONFIG_PATH!"
+          echo "profile=" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        PROFILE=$(jq -r --arg buildTarget "$BUILD_TARGET" --arg type "$BUILD_TYPE" \
+          '.[$buildTarget][$type] // empty' "$CONFIG_PATH")
+
+        if [ -z "$PROFILE" ]; then
+          echo "⚠️ No Build Profile configured for $BUILD_TARGET / $BUILD_TYPE in $CONFIG_PATH. Building with default Unity settings."
+        else
+          echo "✅ Resolved Build Profile for $BUILD_TARGET / $BUILD_TYPE → $PROFILE"
+        fi
+
+        echo "profile=$PROFILE" >> $GITHUB_OUTPUT

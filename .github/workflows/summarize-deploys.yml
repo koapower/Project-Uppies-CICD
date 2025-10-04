@@ -1,0 +1,63 @@
+name: 📄 Summarize Deployment Results
+
+description: |
+  Downloads deployment result artifacts and writes a formatted summary to the GitHub job summary.
+
+on:
+  workflow_call:
+    inputs:
+      runnerMain:
+        required: true
+        type: string
+      projectName:
+        required: true
+        type: string
+      buildVersion:
+        required: true
+        type: string
+      buildType:
+        required: true
+        type: string
+
+jobs:
+  summarize:
+    name: 📄 Summarize Deployment Results
+    runs-on: ${{ inputs.runnerMain }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: 👅 Download All Deployment Result Files
+        uses: actions/download-artifact@v4
+        with:
+          pattern: deployment-results-*
+          path: deployment-results
+          merge-multiple: true
+
+      - name: 📜 Write Deployment Summary
+        run: |
+          if ! ls deployment-results/*.json 1> /dev/null 2>&1; then
+            echo "⚠️ No deployment result files found."
+            echo "No deployment result files were available to summarize." >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+
+          echo "### 🌍 Deployment Results Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "**Project:** \`${{ inputs.projectName }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Type:** \`${{ inputs.buildType }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Version:** \`${{ inputs.buildVersion }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployed At:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "| Target | Status | Details |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|--------|---------|" >> $GITHUB_STEP_SUMMARY
+
+          for file in deployment-results/*.json; do
+            TARGET=$(basename "$file" .json)
+            STATUS=$(jq -r '.status' "$file")
+            NOTE=$(jq -r '.note' "$file")
+
+            echo "| $TARGET | $STATUS | $NOTE |" >> $GITHUB_STEP_SUMMARY
+          done

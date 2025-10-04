@@ -1,0 +1,8 @@
+{
+  "tests": {
+    "timeoutMinutes": 15
+  },
+  "build": {
+    "timeoutMinutes": 30
+  }
+}

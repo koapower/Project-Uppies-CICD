@@ -1,0 +1,32 @@
+name: Create Git Tag
+description: Creates a Git tag in the repository pointing to the specified commit.
+
+inputs:
+  version:
+    description: The Git tag version to create (e.g., v1.2.3).
+    required: true
+  sha:
+    description: The commit SHA to tag (optional; defaults to HEAD).
+    required: false
+  github_token:
+    description: GitHub token to authenticate API requests.
+    required: true
+
+outputs:
+  version:
+    description: The tag version that was created.
+
+runs:
+  using: composite
+  steps:
+    - name: Make script executable
+      shell: bash
+      run: chmod +x "${{ github.action_path }}/create-tag.sh"
+
+    - name: Run create-tag.sh
+      shell: bash
+      run: |
+        VERSION="${{ inputs.version }}"
+        SHA="${{ inputs.sha }}"
+        export GITHUB_TOKEN="${{ inputs.github_token }}"
+        "${{ github.action_path }}/create-tag.sh" "$VERSION" "$SHA"

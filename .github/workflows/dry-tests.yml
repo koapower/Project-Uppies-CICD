@@ -1,0 +1,139 @@
+name: 🌀 Dry Tests
+
+on:
+  workflow_call:
+    inputs:
+      runnerMain:
+        type: string
+        required: false
+      editmodeFailedCount:
+        description: "Number of simulated failed EditMode tests"
+        required: true
+        default: '0'
+        type: string
+      editmodeTotalCount:
+        description: "Total number of simulated EditMode tests"
+        required: true
+        default: '42'
+        type: string
+      playmodeFailedCount:
+        description: "Number of simulated failed PlayMode tests"
+        required: true
+        default: '0'
+        type: string
+      playmodeTotalCount:
+        description: "Total number of simulated PlayMode tests"
+        required: true
+        default: '42'
+        type: string
+      quietMode:
+        description: "Whether to simulate quiet mode"
+        required: true
+        default: 'false'
+        type: string
+    outputs:
+      hasFails:
+        description: "Whether any failures occurred"
+        value: ${{ jobs.dry_tests.outputs.hasFails }}
+      totalTests:
+        description: "Combined total number of simulated tests"
+        value: ${{ jobs.dry_tests.outputs.totalTests }}
+      passedTests:
+        description: "Combined number of simulated passed tests"
+        value: ${{ jobs.dry_tests.outputs.passedTests }}
+      failedTestNames:
+        description: "List of simulated failed test names"
+        value: ${{ jobs.dry_tests.outputs.failedTestNames }}
+
+jobs:
+  dry_tests:
+    name: 🧪 Simulate Tests Summary
+    runs-on: ${{ inputs.runnerMain }}
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      hasFails: ${{ steps.simulate.outputs.hasFails }}
+      totalTests: ${{ steps.simulate.outputs.totalTests }}
+      passedTests: ${{ steps.simulate.outputs.passedTests }}
+      failedTestNames: ${{ steps.simulate.outputs.failedTestNames }}
+    steps:
+      - name: Simulate Tests Summary
+        id: simulate
+        run: |
+          EDIT_TOTAL=${{ inputs.editmodeTotalCount }}
+          EDIT_FAILS=${{ inputs.editmodeFailedCount }}
+          EDIT_PASSED=$((EDIT_TOTAL - EDIT_FAILS))
+
+          PLAY_TOTAL=${{ inputs.playmodeTotalCount }}
+          PLAY_FAILS=${{ inputs.playmodeFailedCount }}
+          PLAY_PASSED=$((PLAY_TOTAL - PLAY_FAILS))
+
+          TOTAL_TESTS=$((EDIT_TOTAL + PLAY_TOTAL))
+          PASSED_TESTS=$((EDIT_PASSED + PLAY_PASSED))
+
+          HAS_FAILS="false"
+          FAILED_LIST="None"
+          
+          if [[ "$EDIT_FAILS" -gt 0 || "$PLAY_FAILS" -gt 0 ]]; then
+            HAS_FAILS="true"
+            FAILED_LIST=""
+            for i in $(seq 1 "$EDIT_FAILS"); do
+              FAILED_LIST+="EditMode.FailingTest$i"$'\n'
+            done
+            for i in $(seq 1 "$PLAY_FAILS"); do
+              FAILED_LIST+="PlayMode.FailingTest$i"$'\n'
+            done
+          fi
+
+          echo "hasFails=$HAS_FAILS" >> $GITHUB_OUTPUT
+          echo "totalTests=$TOTAL_TESTS" >> $GITHUB_OUTPUT
+          echo "passedTests=$PASSED_TESTS" >> $GITHUB_OUTPUT
+          if [[ "$HAS_FAILS" == "true" ]]; then
+            echo "failedTestNames<<EOF" >> $GITHUB_OUTPUT
+            echo "$FAILED_LIST" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "failedTestNames=None" >> $GITHUB_OUTPUT
+          fi
+
+          # Summary output
+          if [[ "${{ inputs.quietMode }}" == "false" || "$HAS_FAILS" == "true" ]]; then
+            echo "### 📋 Simulated Unity Test Results Summary" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Test Mode   | Passed / Total | Status |" >> $GITHUB_STEP_SUMMARY
+            echo "|-------------|-----------------|--------|" >> $GITHUB_STEP_SUMMARY
+            echo "| 🥪 EditMode | $EDIT_PASSED / $EDIT_TOTAL | $([[ $EDIT_FAILS -eq 0 ]] && echo '✔️' || echo '❌') |" >> $GITHUB_STEP_SUMMARY
+            echo "| 🎮 PlayMode | $PLAY_PASSED / $PLAY_TOTAL | $([[ $PLAY_FAILS -eq 0 ]] && echo '✔️' || echo '❌') |" >> $GITHUB_STEP_SUMMARY
+
+            if [[ "$HAS_FAILS" == "true" ]]; then
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "<details><summary>❌ Failed Tests (simulated)</summary>" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "$FAILED_LIST" >> $GITHUB_STEP_SUMMARY
+              echo "</details>" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "🔕 Quiet mode enabled — skipping detailed summary."
+          fi
+
+      - name: Create Dummy Artifacts
+        run: |
+          mkdir -p dummy-results/EditMode
+          mkdir -p dummy-results/PlayMode
+          echo "<test-results mode='EditMode'>" > dummy-results/EditMode/results.xml
+          echo "<test-results mode='PlayMode'>" > dummy-results/PlayMode/results.xml
+          echo "Simulated EditMode test result file" > dummy-results/EditMode/results.txt
+          echo "Simulated PlayMode test result file" > dummy-results/PlayMode/results.txt
+
+      - name: Upload Dummy EditMode Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Unity-EditMode-dry
+          path: dummy-results/EditMode
+
+      - name: Upload Dummy PlayMode Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Unity-PlayMode-dry
+          path: dummy-results/PlayMode

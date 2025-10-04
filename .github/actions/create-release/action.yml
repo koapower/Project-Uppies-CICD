@@ -1,0 +1,33 @@
+name: 📝 Create GitHub Release
+
+description: |
+  Creates a GitHub Release for the given tag and returns the release ID.
+
+inputs:
+  version:
+    description: "The version/tag name (e.g., v1.2.3)"
+    required: true
+  githubToken:
+    description: "GitHub token for API authentication"
+    required: true
+
+outputs:
+  release_id:
+    description: "ID of the created GitHub Release"
+    value: ${{ steps.create_release.outputs.release_id }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Make script executable
+      run: chmod +x ${{ github.action_path }}/create-release.sh
+      shell: bash
+
+    - name: Run Create Release Script
+      id: create_release
+      run: |
+        ${{ github.action_path }}/create-release.sh \
+          "${{ inputs.version }}" \
+          "${{ github.repository }}" \
+          "${{ inputs.githubToken }}"
+      shell: bash

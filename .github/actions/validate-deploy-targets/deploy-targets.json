@@ -1,0 +1,42 @@
+{
+  "gh-pages": {
+    "requiresCombinedArtifact": false,
+    "minimumBuildType": "release",
+    "compatibleBuildTargets": ["WebGL"]
+  },
+  "itch.io": {
+    "requiresCombinedArtifact": false,
+    "minimumBuildType": "release",
+    "compatibleBuildTargets": ["WebGL", "StandaloneWindows", "StandaloneWindows64", "StandaloneLinux64-Client", "StandaloneOSX"]
+  },
+  "s3": {
+    "requiresCombinedArtifact": true,
+    "minimumBuildType": "preview",
+    "compatibleBuildTargets": ["Android", "iOS", "WebGL", "StandaloneWindows", "StandaloneWindows64", "StandaloneLinux64-Server", "StandaloneOSX"]
+  },
+  "custom-server": {
+    "requiresCombinedArtifact": true,
+    "minimumBuildType": "preview",
+    "compatibleBuildTargets": ["Android", "iOS", "WebGL", "StandaloneWindows", "StandaloneWindows64", "StandaloneLinux64-Server", "StandaloneOSX"]
+  },
+  "steam": {
+    "requiresCombinedArtifact": true,
+    "minimumBuildType": "release",
+    "compatibleBuildTargets": ["StandaloneWindows", "StandaloneWindows64", "StandaloneLinux64-Client", "StandaloneOSX"]
+  },
+  "testflight": {
+    "requiresCombinedArtifact": false,
+    "minimumBuildType": "release_candidate",
+    "compatibleBuildTargets": ["iOS"]
+  },
+  "appcenter": {
+    "requiresCombinedArtifact": true,
+    "minimumBuildType": "preview",
+    "compatibleBuildTargets": ["Android", "iOS"]
+  },
+  "firebase": {
+    "requiresCombinedArtifact": true,
+    "minimumBuildType": "release",
+    "compatibleBuildTargets": ["WebGL"]
+  }
+}

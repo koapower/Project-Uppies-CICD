@@ -1,0 +1,42 @@
+name: Upload Per-Build-Target Artifacts
+
+description: |
+  Zips and uploads per-platform artifacts to an existing GitHub Release.
+
+inputs:
+  project:
+    description: "Project name used in artifact naming"
+    required: true
+  version:
+    description: "Version string (e.g., v1.2.3)"
+    required: true
+  releaseId:
+    description: "GitHub Release ID to upload assets to"
+    required: true
+  repository:
+    description: "GitHub repository (owner/repo)"
+    required: true
+  githubToken:
+    description: "GitHub token for API authentication"
+    required: true
+  buildTargets:
+    description: "JSON array of build targets to upload"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Make script executable
+      shell: bash
+      run: chmod +x ${{ github.action_path }}/upload-per-build-target-artifacts.sh
+
+    - name: Run Upload Artifacts Script
+      shell: bash
+      run: |
+        ${{ github.action_path }}/upload-per-build-target-artifacts.sh \
+          "${{ inputs.project }}" \
+          "${{ inputs.version }}" \
+          "${{ inputs.releaseId }}" \
+          "${{ inputs.repository }}" \
+          "${{ inputs.githubToken }}" \
+          '${{ inputs.buildTargets }}'

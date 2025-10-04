@@ -1,0 +1,51 @@
+name: Resolve Test Config
+description: Resolves Unity test config values from input, repo vars, project defaults, or fallback.
+
+inputs:
+  editModePathInput:
+    description: Direct input override for EditMode test path
+    required: false
+  editModePathRepoVar:
+    description: Repository variable fallback for EditMode path
+    required: false
+
+  playModePathInput:
+    description: Direct input override for PlayMode test path
+    required: false
+  playModePathRepoVar:
+    description: Repository variable fallback for PlayMode path
+    required: false
+
+  projectDefaultsFile:
+    description: Optional path to project-level defaults.json
+    required: false
+    default: .github/config/defaults.json
+
+outputs:
+  editModePath:
+    description: Final resolved EditMode test path
+    value: ${{ steps.resolve.outputs.editModePath }}
+  playModePath:
+    description: Final resolved PlayMode test path
+    value: ${{ steps.resolve.outputs.playModePath }}
+
+runs:
+  using: composite
+  steps:
+    - name: Make script executable
+      shell: bash
+      run: chmod +x "${{ github.action_path }}/resolve-test-config.sh"
+
+    - id: resolve
+      name: Resolve test configuration
+      shell: bash
+      env:
+        EDIT_MODE_PATH_INPUT:    ${{ inputs.editModePathInput }}
+        EDIT_MODE_PATH_REPO_VAR: ${{ inputs.editModePathRepoVar }}
+
+        PLAY_MODE_PATH_INPUT:    ${{ inputs.playModePathInput }}
+        PLAY_MODE_PATH_REPO_VAR: ${{ inputs.playModePathRepoVar }}
+
+        PROJECT_DEFAULTS_FILE:   ${{ inputs.projectDefaultsFile }}
+        ACTION_DEFAULTS_FILE:    ${{ github.action_path }}/defaults.json
+      run: bash "${{ github.action_path }}/resolve-test-config.sh"

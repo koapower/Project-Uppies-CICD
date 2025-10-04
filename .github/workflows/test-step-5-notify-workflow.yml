@@ -1,0 +1,154 @@
+name: 🧪 Test - Step 5 Notify Workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      buildType:
+        description: "Build type: 'preview' for manual/dev builds, 'release_candidate' for staging (e.g., v1.2.3-rc.1), 'release' for production (e.g., v1.2.3)"
+        required: true
+        default: "release_candidate"
+        type: choice
+        options:
+          - preview
+          - release_candidate
+          - release
+      projectName:
+        description: "Project name for artifacts"
+        required: true
+        default: "Unity_CI_Templates"
+      buildVersion:
+        description: "Optional version string (e.g. v1.2.3 or v1.2.3-rc.1). Leave blank to auto-generate (e.g. PR-0001, manual-main)"
+        required: false
+        default: "v0.0.0"
+        type: string
+      buildTargets:
+        description: "JSON array of targets to build"
+        required: true
+        default: '["Android", "WebGL", "StandaloneLinux64-Client", "StandaloneLinux64-Server", "StandaloneWindows", "StandaloneWindows64", "StandaloneOSX", "iOS"]'
+      deployTargets:
+        description: "JSON array of deploy targets (e.g. [\"itch.io\",\"s3\"])"
+        required: true
+        default: '["itch.io", "appcenter", "firebase", "s3", "gh-pages", "steam", "discord", "testflight", "custom-server"]'
+        type: string
+      deployTargetsSuccessful:
+        description: "JSON array of SUCCESSFUL deploy targets (e.g. [\"itch.io\",\"s3\"])"
+        required: true
+        default: '["itch.io", "appcenter", "firebase", "s3", "gh-pages", "steam", "discord", "testflight", "custom-server"]'
+        type: string
+      editmodeFailedCount:
+        description: "Number of simulated EditMode test failures"
+        required: false
+        default: '0'
+        type: string
+      playmodeFailedCount:
+        description: "Number of simulated PlayMode test failures"
+        required: false
+        default: '0'
+        type: string
+      releaseResult:
+        description: "Simulated release result"
+        required: false
+        default: 'success'
+        type: choice
+        options:
+          - success
+          - no_artifacts
+          - api_failure
+          - upload_failure
+          - unknown_failure
+      quietMode:
+        description: "Simulate quiet mode"
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+permissions:
+  contents: write
+
+jobs:
+  prepare_metadata:
+    name: ⏳ Prepare Metadata
+    uses: ./.github/workflows/prepare-metadata.yml
+    with:
+      runnerMain: "ubuntu-latest"
+      runnerMacos: "macos-latest"
+      projectName: ${{ inputs.projectName }}
+      unityVersion: ${{ vars.UNITY_VERSION }}
+      skipTests: false
+      testsOnly: false
+      buildTargets: ${{ inputs.buildTargets }}
+      deployTargets: ${{ inputs.deployTargets }}
+      buildType: ${{ inputs.buildType }}
+      buildVersion: ${{ inputs.buildVersion }}
+
+  dry_tests:
+    name: 📋 Create Dry-Tests
+    needs: 
+        - prepare_metadata
+    uses: ./.github/workflows/dry-tests.yml
+    with:
+      editmodeFailedCount: ${{ inputs.editmodeFailedCount }}
+      editmodeTotalCount: 12
+      playmodeFailedCount: ${{ inputs.playmodeFailedCount }}
+      playmodeTotalCount: 8
+      quietMode: ${{ inputs.quietMode }}
+
+  dry_build:
+    name: 🧩 Create Dry-Build
+    needs: 
+        - prepare_metadata
+        - dry_tests
+    if: ${{ needs.dry_tests.outputs.hasFails == 'false' }}
+    uses: ./.github/workflows/dry-build.yml
+    with:
+      unityVersion: ${{ needs.prepare_metadata.outputs.unityVersion }}
+      buildVersion: ${{ needs.prepare_metadata.outputs.buildVersion }}
+      buildType: ${{ needs.prepare_metadata.outputs.buildType }}
+      projectName: ${{ needs.prepare_metadata.outputs.projectName }}
+      buildTargets: ${{ needs.prepare_metadata.outputs.buildTargets }}
+      combineArtifacts: ${{ needs.prepare_metadata.outputs.requiresCombined }}
+    secrets: inherit
+
+  dry_release:
+    name: 📦 Create Dry-Release
+    needs: 
+        - prepare_metadata
+        - dry_build
+    uses: ./.github/workflows/dry-release.yml
+    with:
+      simulateResult: ${{ inputs.releaseResult }}
+
+  dry_deploy:
+    name: 🌍 Create Dry-Deploy
+    needs: [prepare_metadata, dry_build, dry_tests]
+    uses: ./.github/workflows/dry-deploy.yml
+    with:
+      deployTargets: ${{ inputs.deployTargets }}
+      successfulTargets: ${{ inputs.deployTargetsSuccessful }}
+
+  test_notify:
+    name: 📣 Test Notify
+    needs: 
+      - prepare_metadata
+      - dry_tests
+      - dry_build
+      - dry_deploy
+      - dry_release
+    if: always()
+    uses: ./.github/workflows/step-5-notify.yml
+    with:
+      runnerMain: "ubuntu-latest"
+      buildVersion: ${{ needs.prepare_metadata.outputs.buildVersion }}
+      releaseResult: ${{ inputs.releaseResult }}
+      releaseErrorMessage: ${{ needs.dry_release.outputs.releaseErrorMessage }}
+      deployResult: ${{ needs.dry_deploy.outputs.deployResult }}
+      testsHasFails: ${{ needs.dry_tests.outputs.hasFails }}
+      testsTotal: ${{ needs.dry_tests.outputs.totalTests }}
+      testsPassed: ${{ needs.dry_tests.outputs.passedTests }}
+      testsFailedNames: ${{ needs.dry_tests.outputs.failedTestNames }}
+    secrets:
+      SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}

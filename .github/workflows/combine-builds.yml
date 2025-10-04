@@ -1,0 +1,82 @@
+name: 📆 Combine Build Artifacts
+
+description: |
+  Downloads all individual build target artifacts and combines them into a single versioned folder
+  suitable for uploading or deploying. Always creates a consistent combined artifact structure.
+
+on:
+  workflow_call:
+    inputs:
+      runnerMain:
+        required: true
+        type: string
+      projectName:
+        required: true
+        type: string
+      buildVersion:
+        required: true
+        type: string
+      retentionDays:
+        required: false
+        type: number
+        default: 7
+    outputs:
+      created:
+        description: "Whether the combined artifact was actually created"
+        value: ${{ jobs.combine.outputs.created }}
+
+jobs:
+  combine:
+    name: 📆 Combine All Build Targets Into One Folder
+    runs-on: ${{ inputs.runnerMain }}
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      created: ${{ steps.set-created.outputs.success }}
+    steps:
+      - name: 📅 Download All Build Target Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-artifacts
+
+      - name: 🗂️ Combine Into Single Versioned Folder
+        run: |
+          VERSION="${{ inputs.buildVersion }}"
+          PROJECT="${{ inputs.projectName }}"
+          COMBINED_DIR="${PROJECT}-${VERSION}"
+          mkdir -p "$COMBINED_DIR"
+
+          echo "Combining artifacts into: $COMBINED_DIR"
+
+          for DIR in all-artifacts/*; do
+            ARTIFACT_NAME=$(basename "$DIR")
+            TARGET=$(echo "$ARTIFACT_NAME" | sed -E "s/^${PROJECT}-${VERSION}-?//")
+            DEST="$COMBINED_DIR/$TARGET"
+
+            echo "→ Merging target: $TARGET into $DEST"
+            mkdir -p "$DEST"
+            cp -r "$DIR/"* "$DEST/" || echo "⚠️ Nothing to copy for $TARGET"
+            rm -rf "$DEST/unity_license"
+          done
+
+      - name: 📦 Upload Combined Artifact
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.projectName }}-${{ inputs.buildVersion }}
+          path: ${{ inputs.projectName }}-${{ inputs.buildVersion }}
+          retention-days: ${{ inputs.retentionDays }}
+
+      - name: 📤 Set Output if Combined Artifact Exists and Uploaded
+        id: set-created
+        run: |
+          COMBINED_DIR="${{ inputs.projectName }}-${{ inputs.buildVersion }}"
+
+          if [ -d "$COMBINED_DIR" ] && [ "$(ls -A "$COMBINED_DIR")" ]; then
+            echo "✅ Combined folder exists and was uploaded successfully"
+            echo "success=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Combined folder missing or empty"
+            echo "success=false" >> $GITHUB_OUTPUT
+          fi

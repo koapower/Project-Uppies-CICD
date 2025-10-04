@@ -1,0 +1,39 @@
+name: 'Resolve Build Version'
+description: 'Determines the build version based on inputs like Git reference, event, and build type.'
+
+inputs:
+  ref:
+    description: 'Git reference (e.g., refs/tags/v1.2.3)'
+    required: true
+    type: string
+  event:
+    description: 'GitHub event name (e.g., push, pull_request)'
+    required: true
+    type: string
+  input_version:
+    description: 'Optional manual version override (e.g., v1.2.3).'
+    required: false
+    type: string
+  build_type:
+    description: 'Build type: preview | release_candidate | release'
+    required: true
+    type: string
+
+outputs:
+  version:
+    description: "The resolved version"
+    value: ${{ steps.get_version.outputs.version }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Run Version Determination Script
+      id: get_version
+      shell: bash
+      run: |
+        chmod +x "${{ github.action_path }}/resolve-build-version.sh"
+        chmod +x "${{ github.action_path }}/generate-version-for-rc.sh"
+        "${{ github.action_path }}/resolve-build-version.sh" "${{ inputs.ref }}" "${{ inputs.event }}" "${{ inputs.input_version }}" "${{ inputs.build_type }}"

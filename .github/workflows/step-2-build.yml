@@ -1,0 +1,214 @@
+name: 🧩 Step 2 - Build
+
+on:
+  workflow_call:
+    inputs:
+      runnerMain:
+        type: string
+        required: true
+      runnerMacos:
+        type: string
+        required: true
+      projectName:
+        type: string
+        required: false
+      unityVersion:
+        required: true
+        type: string
+      buildVersion:
+        required: true
+        type: string
+      buildType:
+        required: true
+        type: string
+      buildTargets:
+        type: string
+        required: false
+      timeoutMinutes:
+        type: number
+        required: false
+      retentionDays:
+        type: number
+        required: false
+      combineArtifacts:
+        type: string
+        required: false
+    secrets:
+      UNITY_EMAIL: { required: true }
+      UNITY_PASSWORD: { required: true }
+      UNITY_LICENSE: { required: true }
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  group_build_targets:
+    uses: ./.github/workflows/group-build-targets-by-os.yml
+    with:
+      runnerMain: ${{ inputs.runnerMain }}
+      runnerMacos: ${{ inputs.runnerMacos }}
+      buildTargets: ${{ inputs.buildTargets }}
+
+  generate_matrix:
+    name: 🧮 Generate Build Matrix
+    runs-on: ${{ inputs.runnerMain }}
+    defaults:
+      run:
+        shell: bash
+    needs: group_build_targets
+    outputs:
+      matrix: ${{ steps.set_matrix.outputs.matrix }}
+    steps:
+      - name: 🧮 Create Build Matrix from Grouped Build Targets
+        id: set_matrix
+        shell: bash
+        run: |
+          grouped='${{ needs.group_build_targets.outputs.validBuildTargets }}'
+          echo "📦 Grouped build targets: $grouped"
+      
+          matrix=$(echo "$grouped" | jq -c '
+            to_entries
+            | map(.value[] as $p | { os: .key, buildTarget: $p })
+          ')
+      
+          echo "matrix<<EOF" >> $GITHUB_OUTPUT
+          echo "$matrix" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+  build_targets:
+    name: Build for ${{ matrix.buildTarget }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: ${{ inputs.timeoutMinutes }}
+    needs: generate_matrix
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.generate_matrix.outputs.matrix) }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Restore Unity Caches (Library + BuildCache)
+        uses: actions/cache@v4
+        with:
+          path: |
+            Library
+            Library/BuildCache
+            Library/Il2cppBuildCache
+          key: Library-${{ matrix.buildTarget }}-${{ github.run_id }}-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          restore-keys: |
+            Library-${{ matrix.buildTarget }}-
+            Library-
+
+      - name: Check Free Disk Space (Android only)
+        if: matrix.buildTarget == 'Android'
+        uses: jlumbroso/free-disk-space@v1.3.1
+
+      - name: Resolve Build Profile
+        id: resolve_build_profile
+        uses: avalin/unity-ci-templates/.github/actions/resolve-build-profile@main
+        with:
+          buildTarget: ${{ matrix.buildTarget }}
+          buildType: ${{ inputs.buildType }}
+          unityVersion: ${{ inputs.unityVersion }}
+
+      - name: Resolve Unity Run Parameters
+        id: resolve_run_parameters
+        uses: avalin/unity-ci-templates/.github/actions/resolve-unity-run-parameters@main
+        with:
+          buildTarget: ${{ matrix.buildTarget }}
+
+      - name: Build Unity Project
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          unityVersion: ${{ inputs.unityVersion }}
+          targetPlatform: ${{ steps.resolve_run_parameters.outputs.targetPlatform }}
+          customParameters: >-
+            ${{ steps.resolve_run_parameters.outputs.customParameters }}
+            ${{ steps.resolve_build_profile.outputs.profile && format('-buildProfile {0}', steps.resolve_build_profile.outputs.profile) || '' }}
+
+      - name: Save Unity Caches (after successful build)
+        uses: actions/cache/save@v4
+        if: success()
+        with:
+          path: |
+            Library
+            Library/BuildCache
+            Library/Il2cppBuildCache
+          key: Library-${{ matrix.buildTarget }}-${{ github.run_id }}-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+
+      - name: Fix Permissions (Linux only)
+        if: startsWith(matrix.os, 'ubuntu')
+        shell: bash
+        run: sudo chown -R $USER:$USER build/
+
+      - name: Organize Build Output
+        shell: bash
+        run: |
+          VERSION="${{ inputs.buildVersion }}"
+          PLATFORM="${{ steps.resolve_run_parameters.outputs.targetPlatform }}"
+          DEST="${{ inputs.projectName }}-${VERSION}"
+          SOURCE="build/${PLATFORM}"
+
+          while [ -d "$SOURCE/$(basename "$SOURCE")" ]; do
+            SOURCE="$SOURCE/$(basename "$SOURCE")"
+          done
+
+          mkdir -p "$DEST"
+          mv "$SOURCE"/* "$DEST"/
+
+          # ⛔ Remove Burst debug artifacts that shouldn't be shipped
+          find "$DEST" -name '*BurstDebugInformation_DoNotShip*' -exec rm -rf {} +
+
+      - name: Upload ${{ matrix.buildTarget }}-Platform Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.projectName }}-${{ inputs.buildVersion }}-${{ matrix.buildTarget }}
+          path: ${{ inputs.projectName }}-${{ inputs.buildVersion }}/* # The '/*' ensures the content is zipped to the folder, not the entire folder
+          retention-days: ${{ inputs.retentionDays }}
+
+  combine_builds:
+    if: ${{ inputs.combineArtifacts == 'true' }}
+    needs: [ build_targets ]
+    uses: ./.github/workflows/combine-builds.yml
+    with:
+      runnerMain: ${{ inputs.runnerMain }}
+      projectName: ${{ inputs.projectName }}
+      buildVersion: ${{ inputs.buildVersion }}
+      retentionDays: ${{ inputs.retentionDays }}
+
+  summarize_builds:
+    needs: [group_build_targets, build_targets, combine_builds]
+    if: always()
+    uses: ./.github/workflows/summarize-builds.yml
+    with:
+      runnerMain: ${{ inputs.runnerMain }}
+      projectName: ${{ inputs.projectName }}
+      buildVersion: ${{ inputs.buildVersion }}
+      groupedBuildTargets: ${{ needs.group_build_targets.outputs.validBuildTargets }}
+      combineRequested: ${{ inputs.combineArtifacts }}
+      combinedCreated: ${{ (needs.combine_builds.result == 'success' && needs.combine_builds.outputs.created) || 'false' }}
+
+  fail_if_builds_failed:
+    name: ⛔ Fail if Any Builds Failed
+    needs: [summarize_builds]
+    runs-on: ${{ inputs.runnerMain }}
+    defaults:
+      run:
+        shell: bash
+    if: ${{ needs.summarize_builds.outputs.didAnyBuildsFail == 'true' }}
+    steps:
+      - name: ⛔ Fail the Pipeline
+        shell: bash
+        run: |
+          echo "❌ One or more builds failed. Failing the pipeline."
+          exit 1

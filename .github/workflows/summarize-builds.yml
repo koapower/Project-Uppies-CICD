@@ -1,0 +1,144 @@
+name: 📄 Summarize Build Results
+
+description: |
+  Writes a summary of the Unity build results, including per-build-target status
+  and combined artifact status.
+
+on:
+  workflow_call:
+    inputs:
+      runnerMain:
+        type: string
+        required: true
+      projectName:
+        required: true
+        type: string
+      buildVersion:
+        required: true
+        type: string
+      groupedBuildTargets:
+        required: true
+        type: string
+      combineRequested:
+        required: true
+        type: string
+      combinedCreated:
+        required: false
+        type: string
+        default: "false"
+    outputs:
+      didAnyBuildsFail:
+        description: "True if any builds failed"
+        value: ${{ jobs.summarize.outputs.didAnyBuildsFail }}
+
+jobs:
+  summarize:
+    name: 📄 Summarize Build Results
+    runs-on: ${{ inputs.runnerMain }}
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      didAnyBuildsFail: ${{ steps.summary.outputs.didAnyBuildsFail }}
+    steps:
+      - name: 📁 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 📦 Download Combined Artifact
+        if: ${{ inputs.combineRequested == 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.projectName }}-${{ inputs.buildVersion }}
+          path: all-artifacts
+
+      - name: 📦 Download Per-Build-Target Artifacts
+        if: ${{ inputs.combineRequested == 'false' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          grouped='${{ inputs.groupedBuildTargets }}'
+          version='${{ inputs.buildVersion }}'
+          project='${{ inputs.projectName }}'
+
+          echo "$grouped" | jq -r 'to_entries[].value[]' | while read -r buildTarget; do
+            name="${project}-${version}-${buildTarget}"
+            echo "⬇️ Downloading: $name"
+            mkdir -p "all-artifacts/${name}"
+            gh run download --name "$name" --dir "all-artifacts/${name}" || echo "⚠️ Failed to download $name"
+          done
+
+      - name: 📦 Unzip Downloaded Artifacts
+        run: |
+          echo "🔍 Unzipping all .zip artifacts..."
+          find all-artifacts -name "*.zip" -exec sh -c '
+            for zip; do
+              dir="${zip%*.zip}"
+              mkdir -p "$dir"
+              unzip -q "$zip" -d "$dir"
+              rm "$zip"
+            done
+          ' sh {} +
+
+      - name: 📜 Write Build Summary
+        id: summary
+        run: |
+          echo "### 🧩 Unity Build Results Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Target | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          GROUPED='${{ inputs.groupedBuildTargets }}'
+          VERSION='${{ inputs.buildVersion }}'
+          PROJECT='${{ inputs.projectName }}'
+          COMBINED='${{ inputs.combineRequested }}'
+          readarray -t ALL_BUILD_TARGETS < <(echo "$GROUPED" | jq -r 'to_entries[].value[]')
+
+          build_failed=0
+
+          for buildTarget in "${ALL_BUILD_TARGETS[@]}"; do
+            label="$buildTarget"
+
+            if [[ "$COMBINED" == "true" ]]; then
+              # Try standard combined path first, fallback to flat path
+              if [ -d "all-artifacts/${PROJECT}-${VERSION}/${buildTarget}" ]; then
+                artifact_dir="all-artifacts/${PROJECT}-${VERSION}/${buildTarget}"
+              elif [ -d "all-artifacts/${buildTarget}" ]; then
+                artifact_dir="all-artifacts/${buildTarget}"
+              else
+                artifact_dir="UNKNOWN_PATH"
+              fi
+            else
+              artifact_dir="all-artifacts/${PROJECT}-${VERSION}-${buildTarget}"
+            fi
+
+            echo "🔍 Checking artifact path: $artifact_dir"
+
+            if [ -n "$artifact_dir" ] && [ -n "$(find "$artifact_dir" -mindepth 1 -type f 2>/dev/null)" ]; then
+              echo "| $label | ✅ Build successful |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| $label | ❌ Build failed |" >> $GITHUB_STEP_SUMMARY
+              build_failed=1
+            fi
+          done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📆 Combined Artifact" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "$COMBINED" == "true" ]]; then
+            if [[ "${{ inputs.combinedCreated }}" == "true" ]]; then
+              echo "- ✅ Combined artifact successfully created and uploaded." >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- ❌ Combined artifact expected but failed to create/upload." >> $GITHUB_STEP_SUMMARY
+              build_failed=1
+            fi
+          else
+            echo "- ℹ️ Combined artifact was not requested." >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Export output as true or false
+          if [[ $build_failed -eq 1 ]]; then
+            echo "didAnyBuildsFail=true" >> $GITHUB_OUTPUT
+          else
+            echo "didAnyBuildsFail=false" >> $GITHUB_OUTPUT
+          fi

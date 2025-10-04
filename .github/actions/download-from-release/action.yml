@@ -1,0 +1,47 @@
+name: "Download Release Assets"
+description: "Downloads and extracts release assets from GitHub"
+
+inputs:
+  projectName:
+    description: "The name of the project"
+    required: true
+    type: string
+  version:
+    description: "The version/tag name (e.g., v1.2.3)"
+    required: true
+    type: string
+  githubRepository:
+    description: "The GitHub repository (e.g., user/repo)"
+    required: true
+    type: string
+  githubToken:
+    description: "The GitHub token to authenticate API requests"
+    required: true
+    type: string
+  hasCombinedArtifacts:
+    description: "Whether a combined artifact folder has been created"
+    required: true
+    type: string
+    default: "false"
+  requiredBuildTargetsJson:
+    description: "JSON array of required build targets"
+    required: true
+    type: string
+
+runs:
+  using: "composite"
+  steps:
+    - name: Make script executable
+      shell: bash
+      run: chmod +x "${{ github.action_path }}/download-from-release.sh"
+
+    - name: "Download Release Assets"
+      shell: bash
+      run: >
+        "${{ github.action_path }}/download-from-release.sh"
+        "${{ inputs.projectName }}"
+        "${{ inputs.version }}"
+        "${{ inputs.githubRepository }}"
+        "${{ inputs.githubToken }}"
+        "${{ inputs.hasCombinedArtifacts }}"
+        '${{ inputs.requiredBuildTargetsJson }}'

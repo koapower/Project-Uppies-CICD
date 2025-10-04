@@ -1,0 +1,37 @@
+name: 'Check Release Exists'
+description: 'Checks if a release exists for a given version'
+
+inputs:
+  version:
+    description: 'The version to check (e.g., v1.2.3-rc.1)'
+    required: true
+    type: string
+  repo:
+    description: 'The GitHub repository name (e.g., user/repo)'
+    required: true
+    type: string
+  token:
+    description: 'GitHub token for API authentication'
+    required: true
+    type: string
+
+outputs:
+  release_id:
+    description: "The ID of the existing release (if found)"
+    value: ${{ steps.check_release.outputs.release_id }}
+  release_exists:
+    description: "Whether a release exists with the given version"
+    value: ${{ steps.check_release.outputs.already_exists }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Run release check script
+      id: check_release
+      run: |
+        chmod +x "${{ github.action_path }}/check-release-exists.sh"
+        "${{ github.action_path }}/check-release-exists.sh" "${{ inputs.version }}" "${{ inputs.repo }}" "${{ inputs.token }}"
+      shell: bash

@@ -1,0 +1,108 @@
+name: "Generate Notification"
+description: "Generates notification titles, messages, and statuses for release pipelines."
+
+inputs:
+  releaseResult:
+    required: true
+    type: string
+  releaseErrorMessage:
+    required: false
+    type: string
+    default: ""
+  deployResult:
+    required: true
+    type: string
+  version:
+    required: true
+    type: string
+  testsHasFails:
+    required: false
+    type: string
+    default: "false"
+  testsTotal:
+    required: false
+    type: string
+    default: "0"
+  testsPassed:
+    required: false
+    type: string
+    default: "0"
+  testsFailedNames:
+    required: false
+    type: string
+    default: "Skipped (tests were not run)"
+
+outputs:
+  title:
+    description: "Main notification title"
+    value: ${{ steps.set-outputs.outputs.title }}
+  message:
+    description: "Notification body message"
+    value: ${{ steps.set-outputs.outputs.message }}
+  slackMessage:
+    description: "Slack-formatted message"
+    value: ${{ steps.set-outputs.outputs.slackMessage }}
+  discordMessage:
+    description: "Discord-formatted message"
+    value: ${{ steps.set-outputs.outputs.discordMessage }}
+  status:
+    description: "Status (success, failure, etc)"
+    value: ${{ steps.set-outputs.outputs.status }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set Environment Variables
+      shell: bash
+      run: |
+        echo "RELEASE=${{ inputs.releaseResult }}" >> $GITHUB_ENV
+        echo "DEPLOY=${{ inputs.deployResult }}" >> $GITHUB_ENV
+        echo "VERSION=${{ inputs.version }}" >> $GITHUB_ENV
+        echo "ERROR=${{ inputs.releaseErrorMessage }}" >> $GITHUB_ENV
+        echo "REPO=${{ github.repository }}" >> $GITHUB_ENV
+        echo "RELEASE_URL=https://github.com/${{ github.repository }}/releases/tag/${{ inputs.version }}" >> $GITHUB_ENV
+        echo "RUN_URL=https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_ENV
+        if [[ "${GITHUB_REF_TYPE}" != "tag" ]]; then
+          echo "BRANCH=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+        else
+          echo "BRANCH=" >> $GITHUB_ENV
+        fi
+        echo "COMMIT=${GITHUB_SHA}" >> $GITHUB_ENV
+        echo "PR_NUMBER=${{ github.event.pull_request.number || '' }}" >> $GITHUB_ENV
+        echo "TESTS_HAS_FAILS=${{ inputs.testsHasFails }}" >> $GITHUB_ENV
+        echo "TESTS_TOTAL=${{ inputs.testsTotal }}" >> $GITHUB_ENV
+        echo "TESTS_PASSED=${{ inputs.testsPassed }}" >> $GITHUB_ENV
+        echo "TESTS_FAILED_NAMES='${{ inputs.testsFailedNames }}'" >> $GITHUB_ENV
+
+    - name: Make helper scripts executable
+      shell: bash
+      run: |
+        chmod +x "${{ github.action_path }}/determine-status.sh"
+        chmod +x "${{ github.action_path }}/format-slack.sh"
+        chmod +x "${{ github.action_path }}/format-discord.sh"
+
+    - name: Run determine status script
+      shell: bash
+      run: "${{ github.action_path }}/determine-status.sh"
+
+    - name: Format Final Notification Messages
+      id: set-outputs
+      shell: bash
+      run: |
+        SLACK_MESSAGE=$("${{ github.action_path }}/format-slack.sh" "$MESSAGE" "$RUN_URL" "$RELEASE_URL")
+        DISCORD_MESSAGE=$("${{ github.action_path }}/format-discord.sh" "$MESSAGE" "$RUN_URL" "$RELEASE_URL")
+
+        echo "title=$TITLE" >> "$GITHUB_OUTPUT"
+        echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
+        echo "message<<EOF" >> "$GITHUB_OUTPUT"
+        echo "$MESSAGE" >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"
+
+        echo "slackMessage<<EOF" >> "$GITHUB_OUTPUT"
+        echo "$SLACK_MESSAGE" >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"
+
+        echo "discordMessage<<EOF" >> "$GITHUB_OUTPUT"
+        echo "$DISCORD_MESSAGE" >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"

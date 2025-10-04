@@ -1,0 +1,81 @@
+name: 🧪 Test - Step 3 Release Workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      buildType:
+        description: "preview = build only!"
+        required: true
+        default: "preview"
+        type: choice
+        options:
+          - preview
+          - release_candidate
+          - release
+      buildVersion:
+        description: "Optional version string (e.g. v1.2.3 or v1.2.3-rc.1). Leave blank to auto-generate (e.g. PR-0001, manual-main)"
+        required: false
+        default: "v0.0.0"
+        type: string
+      projectName:
+        description: "Project name for artifacts"
+        required: true
+        default: "Unity_CI_Templates"
+      buildTargets:
+        description: "JSON array of build targets"
+        required: true
+        default: '["Android", "WebGL", "StandaloneLinux64-Client", "StandaloneLinux64-Server", "StandaloneWindows", "StandaloneWindows64", "StandaloneOSX", "iOS"]'
+      deployTargets:
+        description: "JSON array of deploy targets (e.g. [\"itch.io\",\"s3\"])"
+        required: true
+        default: '["steam", "gh-pages"]'
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  prepare_metadata:
+    name: ⏳ Prepare Metadata
+    uses: ./.github/workflows/prepare-metadata.yml
+    with:
+      runnerMain: "ubuntu-latest"
+      runnerMacos: "macos-latest"
+      projectName: ${{ inputs.projectName }}
+      unityVersion: ${{ vars.UNITY_VERSION }}
+      skipTests: true
+      testsOnly: false
+      buildTargets: ${{ inputs.buildTargets }}
+      deployTargets: ${{ inputs.deployTargets }}
+      buildType: ${{ inputs.buildType }}
+      buildVersion: ${{ inputs.buildVersion }}
+
+  dry_build:
+    name: 🧩 Create Dry-Build
+    needs: prepare_metadata
+    uses: ./.github/workflows/dry-build.yml
+    with:
+      unityVersion: ${{ needs.prepare_metadata.outputs.unityVersion }}
+      buildVersion: ${{ needs.prepare_metadata.outputs.buildVersion }}
+      buildType: ${{ needs.prepare_metadata.outputs.buildType }}
+      projectName: ${{ needs.prepare_metadata.outputs.projectName }}
+      buildTargets: ${{ inputs.buildTargets }}
+      combineArtifacts: ${{ needs.prepare_metadata.outputs.requiresCombined }}
+    secrets: inherit
+
+  test_release:
+    name: 📦 Test Release Workflow
+    needs: 
+      - prepare_metadata 
+      - dry_build
+    if: ${{ inputs.buildType == 'release' || inputs.buildType == 'release_candidate' }}
+    uses: ./.github/workflows/step-3-release.yml
+    with:
+      runnerMain: "ubuntu-latest"
+      buildType: ${{ needs.prepare_metadata.outputs.buildType }}
+      buildVersion: ${{ needs.prepare_metadata.outputs.buildVersion }}
+      projectName: ${{ needs.prepare_metadata.outputs.projectName }}
+      buildTargets: ${{ inputs.buildTargets }}
+      combineArtifacts: ${{ needs.prepare_metadata.outputs.requiresCombined }}
+      skipPerBuildTargetArtifacts: ${{ needs.prepare_metadata.outputs.skipPerBuildTarget }}  
+    secrets: inherit

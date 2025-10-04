@@ -1,0 +1,140 @@
+name: 📣 Step 5 - Notify
+
+on:
+  workflow_call:
+    inputs:
+      runnerMain:
+        type: string
+        required: true
+      buildVersion:
+        required: true
+        type: string
+      releaseResult:
+        required: false
+        type: string
+        default: "skipped"
+      releaseErrorMessage:
+        required: false
+        type: string
+        default: ""
+      deployResult:
+        required: false
+        type: string
+        default: "skipped"
+      testsHasFails:
+        required: false
+        type: string
+        default: "false"
+      testsTotal:
+        required: false
+        type: string
+        default: "0"
+      testsPassed:
+        required: false
+        type: string
+        default: "0"
+      testsFailedNames:
+        required: false
+        type: string
+        default: "None (tests were not run)"
+    secrets:
+      SLACK_WEBHOOK: { required: false }
+      DISCORD_WEBHOOK: { required: false }
+
+jobs:
+  notify:
+    if: startsWith(inputs.buildVersion, 'v') && !contains(inputs.buildVersion, '-preview')
+    runs-on: ${{ inputs.runnerMain }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      SLACK_STATUS: "⚠️ Webhook not configured"
+      DISCORD_STATUS: "⚠️ Webhook not configured"
+    steps:
+      - name: Download Deployment Results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: deployment-results-*
+          path: deploy-results
+          merge-multiple: true
+
+      - name: Generate Notification
+        id: generate_notification
+        uses: avalin/unity-ci-templates/.github/actions/generate-notification@v1
+        with:
+          releaseResult: ${{ inputs.releaseResult }}
+          releaseErrorMessage: ${{ inputs.releaseErrorMessage }}
+          deployResult: ${{ inputs.deployResult }}
+          version: ${{ inputs.buildVersion }}
+          testsHasFails: ${{ inputs.testsHasFails }}
+          testsTotal: ${{ inputs.testsTotal }}
+          testsPassed: ${{ inputs.testsPassed }}
+          testsFailedNames: ${{ inputs.testsFailedNames }}
+
+      # ───── Slack ─────
+      - name: 📢 Send Slack Notification (if configured)
+        if: ${{ env.SLACK_WEBHOOK != '' }}
+        continue-on-error: true
+        run: |
+          case "${{ steps.generate_notification.outputs.status }}" in
+            success) COLOR="good" ;;
+            failure) COLOR="danger" ;;
+            *) COLOR="#cccccc" ;;
+          esac
+
+          TEXT=$'*${{ steps.generate_notification.outputs.title }}* - `${{ github.repository }}`\n${{ steps.generate_notification.outputs.slackMessage }}'
+
+          PAYLOAD=$(jq -n \
+            --arg text "$TEXT" \
+            --arg color "$COLOR" \
+            '{
+              text: $text,
+              attachments: [{ color: $color }]
+            }'
+          )
+
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" \
+            -d "$PAYLOAD" "$SLACK_WEBHOOK")
+
+          if [ "$RESPONSE" -ge 200 ] && [ "$RESPONSE" -lt 300 ]; then
+            echo "SLACK_STATUS=✅ Notification sent" >> $GITHUB_ENV
+          else
+            echo "SLACK_STATUS=❌ Failed to send (HTTP $RESPONSE)" >> $GITHUB_ENV
+          fi
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+
+      # ───── Discord ─────
+      - name: 📢 Send Discord Notification (if configured)
+        if: ${{ env.DISCORD_WEBHOOK != '' }}
+        continue-on-error: true
+        run: |
+          TEXT=$'${{ steps.generate_notification.outputs.discordMessage }}'
+
+          PAYLOAD=$(jq -n \
+            --arg content "$TEXT" \
+            '{ content: $content }'
+          )
+
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" \
+            -d "$PAYLOAD" "$DISCORD_WEBHOOK")
+
+          if [ "$RESPONSE" -ge 200 ] && [ "$RESPONSE" -lt 300 ]; then
+            echo "DISCORD_STATUS=✅ Notification sent" >> $GITHUB_ENV
+          else
+            echo "DISCORD_STATUS=❌ Failed to send (HTTP $RESPONSE)" >> $GITHUB_ENV
+          fi
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+
+      # ───── Summary ─────
+      - name: 📄 Notification Summary
+        if: always()
+        run: |
+          echo "### 📣 Notification Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Channel | Status | Details |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|---------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Slack   | ${SLACK_STATUS%% *} | ${SLACK_STATUS#* } |" >> $GITHUB_STEP_SUMMARY
+          echo "| Discord | ${DISCORD_STATUS%% *} | ${DISCORD_STATUS#* } |" >> $GITHUB_STEP_SUMMARY

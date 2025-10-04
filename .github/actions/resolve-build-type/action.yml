@@ -1,0 +1,33 @@
+name: Resolve Build Type
+description: |
+  Determines the build type (preview, release_candidate, or release) based on
+  tests-only flags, manual override, and GitHub event/ref patterns.
+
+inputs:
+  testsOnlyOverride:
+    description: "If 'true', force preview (tests-only) build."
+    required: false
+    default: ''
+  buildTypeOverride:
+    description: "Explicit build-type override (preview|release_candidate|release)."
+    required: false
+    default: ''
+
+outputs:
+  buildType:
+    description: "The resolved build type: preview, release_candidate, or release."
+    value: ${{ steps.set.outputs.buildType }}
+
+runs:
+  using: composite
+  steps:
+    - name: Run Build Type Determination Script
+      id: set
+      shell: bash
+      run: |
+        chmod +x "${{ github.action_path }}/resolve-build-type.sh"
+        "${{ github.action_path }}/resolve-build-type.sh" \
+          "${{ github.ref }}" \
+          "${{ github.event_name }}" \
+          "${{ inputs.testsOnlyOverride }}" \
+          "${{ inputs.buildTypeOverride }}"

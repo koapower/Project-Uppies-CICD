@@ -1,0 +1,73 @@
+name: 📈 Roslyn Lint (CSharpier)
+
+on:
+  workflow_call:
+    inputs:
+      runnerMain:
+        type: string
+        required: true
+      allowAutofix:
+        description: "Whether to allow auto-formatting and commit"
+        required: false
+        default: false
+        type: boolean
+      allowFailure:
+        description: "Whether failed formatting should be allowed"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  roslyn-lint:
+    name: Lint C# Code
+    runs-on: ${{ inputs.runnerMain }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Install CSharpier
+        run: |
+          dotnet tool install -g csharpier
+          echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
+
+      - name: Check C# formatting (CSharpier)
+        id: csharpier
+        run: |
+          echo "📂 Checking formatting in Assets/..."
+          if ! dotnet csharpier --check Assets; then
+            echo "FORMAT_FAILED=true" >> $GITHUB_ENV
+          fi
+
+      - name: Fail if formatting issues found and allowFailure is false
+        if: inputs.allowFailure == false
+        run: |
+          echo "❌ Formatting issues found and allowFailure is false. Failing the job."
+          exit 1
+
+      - name: Auto-format C# files with CSharpier
+        if: ${{ inputs.allowAutofix == true }}
+        run: |
+          echo "🛠️ Auto-formatting allowed. Applying changes..."
+          dotnet csharpier Assets
+
+      - name: Run Unity-style fixer
+        if: ${{ inputs.allowAutofix == true }}
+        run: bash .github/scripts/analyze/csharpier-addon.sh
+
+      - name: Commit formatting fixes
+        if: ${{ inputs.allowAutofix == true }}
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add Assets
+          git diff --cached --quiet || git commit -m "ROSLYN-AUTOFIX: auto-format C# files with CSharpier"
+          git push || echo "⚠️ Could not push changes (probably a PR or no permission)"
+
+      - name: Add Summary
+        if: failure()
+        run: |
+          echo "❌ **CSharpier formatting issues detected**" >> $GITHUB_STEP_SUMMARY
+          echo "Run \`dotnet csharpier .\` locally or re-run with \`allowAutofix: true\`." >> $GITHUB_STEP_SUMMARY

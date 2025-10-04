@@ -1,0 +1,63 @@
+name: 🧪 Test - Prepare Metadata Workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      runnerMain:
+        required: true
+        type: string
+        default: 'ubuntu-latest'
+      runnerMacos:
+        required: true
+        type: string
+        default: 'macos-latest'
+      unityVersion:
+        description: "Specific unity version to test on"
+        required: false
+        default: "auto"
+        type: string
+      projectName:
+        description: "Optional project name"
+        required: false
+      buildVersion:
+        description: "Optional base version (e.g., v1.2.3) for release candidate"
+        required: false
+      buildType:
+        description: "Build type"
+        required: false
+        type: choice
+        options:
+          - preview
+          - release_candidate
+          - release
+        default: preview
+      skipTests:
+        description: "Whether tests should be skipped"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      deployTargets:
+        description: "JSON array of deploy targets (e.g. [\"itch.io\",\"s3\"])"
+        required: true
+        default: '["steam", "gh-pages"]'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  prepare-metadata:
+    name: ⏳ Prepare Metadata
+    uses: ./.github/workflows/prepare-metadata.yml
+    with:
+      runnerMain: ${{ inputs.runnerMain }}
+      runnerMacos: ${{ inputs.runnerMacos }}
+      unityVersion: ${{ inputs.unityVersion }}
+      projectName: ${{ inputs.projectName }}
+      skipTests: ${{ inputs.skipTests }}
+      deployTargets: ${{ inputs.deployTargets }}
+      buildType: ${{ inputs.buildType }}
+      buildVersion: ${{ inputs.buildVersion }}

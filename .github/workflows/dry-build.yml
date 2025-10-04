@@ -1,0 +1,117 @@
+name: 🌀 Dry Build
+
+on:
+  workflow_call:
+    inputs:
+      runnerMain:
+        type: string
+        required: false
+      runnerMacos:
+        type: string
+        required: false
+      projectName:
+        type: string
+        required: false
+      unityVersion:
+        required: true
+        type: string
+      buildVersion:
+        required: true
+        type: string
+      buildType:
+        required: true
+        type: string
+      buildTargets:
+        type: string
+        required: false
+      retentionDays:
+        type: number
+        required: false
+      combineArtifacts:
+        type: string
+        required: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  group_build_targets:
+    name: 🧮 Group Build Targets
+    uses: ./.github/workflows/group-build-targets-by-os.yml
+    with:
+      runnerMain: ${{ inputs.runnerMain }}
+      runnerMacos: ${{ inputs.runnerMacos }}
+      buildTargets: ${{ inputs.buildTargets }}
+
+  generate_matrix:
+    name: 🧮 Generate Dry Build Matrix
+    runs-on: ${{ inputs.runnerMain }}
+    needs: [ group_build_targets ]
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: 🧮 Create Dry Build Matrix
+        id: set-matrix
+        shell: bash
+        run: |
+          grouped='${{ needs.group_build_targets.outputs.validBuildTargets }}'
+          echo "📦 Grouped targets: $grouped"
+      
+          matrix=$(echo "$grouped" | jq -c '
+            to_entries
+            | map(.value[] as $p | { os: .key, buildTarget: $p })
+          ')
+      
+          echo "matrix<<EOF" >> $GITHUB_OUTPUT
+          echo "$matrix" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+  dry_build_targets:
+    name: 🏗️ Simulate Build for ${{ matrix.buildTarget }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    needs: [ generate_matrix ]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.generate_matrix.outputs.matrix) }}
+    steps:
+      - name: Create Placeholder Folder Structure
+        shell: bash
+        run: |
+          BUILD_VERSION="${{ inputs.buildVersion }}"
+          TARGET="${{ matrix.buildTarget }}"
+          DEST="${{ inputs.projectName }}-${BUILD_VERSION}/${TARGET}"
+
+          echo "Creating dry build structure at $DEST"
+          mkdir -p "$DEST"
+          echo "This is a dry build placeholder for $TARGET, version $BUILD_VERSION" > "$DEST/README.txt"
+
+      - name: Upload Placeholder Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.projectName }}-${{ inputs.buildVersion }}-${{ matrix.buildTarget }}
+          path: ${{ inputs.projectName }}-${{ inputs.buildVersion }}/${{ matrix.buildTarget }}/*
+          retention-days: ${{ inputs.retentionDays }}
+
+  combine_builds:
+    if: ${{ inputs.combineArtifacts == 'true' }}
+    needs: [ dry_build_targets ]
+    uses: ./.github/workflows/combine-builds.yml
+    with:
+      runnerMain: "ubuntu-latest"
+      projectName: ${{ inputs.projectName }}
+      buildVersion: ${{ inputs.buildVersion }}
+      retentionDays: ${{ inputs.retentionDays }}
+
+  summarize_builds:
+    needs: [ group_build_targets, dry_build_targets, combine_builds ]
+    if: always()
+    uses: ./.github/workflows/summarize-builds.yml
+    with:
+      runnerMain: ${{ inputs.runnerMain }}
+      projectName: ${{ inputs.projectName }}
+      buildVersion: ${{ inputs.buildVersion }}
+      groupedBuildTargets: ${{ needs.group_build_targets.outputs.validBuildTargets }}
+      combineRequested: ${{ inputs.combineArtifacts }}
+      combinedCreated: ${{ (needs.combine_builds.result == 'success' && needs.combine_builds.outputs.created) || 'false' }}

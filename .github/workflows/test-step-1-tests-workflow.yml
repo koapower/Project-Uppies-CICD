@@ -1,0 +1,77 @@
+name: 🧪 Test - Step 1 Tests Workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      unityVersion:
+        description: "Specific unity version to test on"
+        required: false
+        default: "auto"
+        type: string
+      useGitLFS:
+        description: "Use GIT LFS?"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      editModePath:
+        description: "Relative path to Unity Editor tests"
+        required: true
+        default: "Assets/Tests/Editor"
+        type: string
+      playModePath:
+        description: "Relative path to Unity PlayMode tests"
+        required: true
+        default: "Assets/Tests/PlayMode"
+        type: string
+      timeoutMinutes:
+        description: "Minutes until tests fail on timeout"
+        required: true
+        default: "15"
+        type: string
+      quietMode:
+        description: "Enable quiet mode to suppress uploads/logs unless tests fail"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare_metadata:
+    name: ⏳ Prepare Metadata
+    uses: ./.github/workflows/prepare-metadata.yml
+    with:
+      runnerMain: "ubuntu-latest"
+      runnerMacos: "macos-latest"
+      unityVersion: ${{ inputs.unityVersion }}
+      projectName: ${{ vars.PROJECT_NAME }}
+      skipTests: false
+      testsOnly: true
+      deployTargets: '[]'
+      buildType: 'preview'
+      buildVersion: 'TESTING_TESTS_WORKFLOW'
+
+  test-run-tests:
+    name: 📋 Test Run Tests
+    needs: prepare_metadata
+    uses: ./.github/workflows/step-1-test.yml
+    with:
+      runnerMain: "ubuntu-latest"
+      unityVersion: ${{ needs.prepare_metadata.outputs.unityVersion }}
+      useGitLfs: ${{ inputs.useGitLFS }}
+      editModePath: ${{ inputs.editModePath != '' && inputs.editModePath || needs.prepare_metadata.outputs.editModePath }}
+      playModePath: ${{ inputs.playModePath != '' && inputs.playModePath || needs.prepare_metadata.outputs.playModePath }}
+      timeoutMinutes: ${{ fromJson(inputs.timeoutMinutes) }}
+      quietMode: ${{ inputs.quietMode }}
+    secrets:
+      UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+      UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+      UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}

@@ -1,0 +1,152 @@
+name: 📚 Group Build Targets By OS
+
+on:
+  workflow_call:
+    inputs:
+      runnerMain:
+        type: string
+        required: true
+      runnerMacos:
+        type: string
+        required: true
+      buildTargets:
+        description: "JSON array of build targets to validate and group by required OS"
+        required: true
+        type: string
+    outputs:
+      validBuildTargets:
+        description: "Map of OS runner label to list of build targets"
+        value: ${{ jobs.filter_targets.outputs.validBuildTargets }}
+
+jobs:
+  filter_targets:
+    name: 🧮 Filter Targets
+    runs-on: ${{ inputs.runnerMain }}
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      validBuildTargets: ${{ steps.group.outputs.validBuildTargets }}
+
+    steps:
+      - name: 📁 Checkout config folder
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/config
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: 🔍 Validate build targets and Load Config
+        id: validate
+        run: |
+          INPUT_JSON='${{ inputs.buildTargets }}'
+          CONFIG_FILE=".github/config/build-targets.json"
+          FALLBACK_URL="https://raw.githubusercontent.com/avalin/unity-ci-templates/main/.github/config/build-targets.json"
+
+          echo "🔍 Validating input build targets: $INPUT_JSON"
+
+          if [ -f "$CONFIG_FILE" ]; then
+            echo "✅ Using config: $CONFIG_FILE"
+          else
+            echo "⚠️ Config not found. Downloading fallback..."
+            mkdir -p "$(dirname "$CONFIG_FILE")"
+            curl -sSL "$FALLBACK_URL" -o "$CONFIG_FILE"
+          fi
+
+          echo "$INPUT_JSON" | jq empty || {
+            echo "❌ Input is not valid JSON."
+            exit 1
+          }
+
+          KNOWN=$(jq -r 'keys[]' "$CONFIG_FILE")
+          INPUTS=$(echo "$INPUT_JSON" | jq -r '.[]')
+          VALID=()
+          INVALID=()
+
+          for TARGET in $INPUTS; do
+            if echo "$KNOWN" | grep -qx "$TARGET"; then
+              VALID+=("$TARGET")
+            else
+              INVALID+=("$TARGET")
+            fi
+          done
+
+          if [ "${#INVALID[@]}" -gt 0 ]; then
+            echo "⚠️ Unrecognized targets (ignored):"
+            for p in "${INVALID[@]}"; do echo "  - $p"; done
+          fi
+
+          # Export for later steps
+          echo "VALID_TARGETS=${VALID[*]}" >> $GITHUB_ENV
+          echo "INVALID_TARGETS=${INVALID[*]}" >> $GITHUB_ENV
+
+          # Output valid build targets
+          VALID_JSON=$(printf '%s\n' "${VALID[@]}" | jq -R . | jq -s .)
+          echo "validBuildTargets<<EOF" >> $GITHUB_OUTPUT
+          echo "$VALID_JSON" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: 🧪 Group Valid Targets by OS
+        id: group
+        run: |
+          TARGETS='${{ steps.validate.outputs.validBuildTargets }}'
+          MAIN="${{ inputs.runnerMain }}"
+          MACOS="${{ inputs.runnerMacos }}"
+
+          echo "📥 Grouping targets..."
+
+          echo "$TARGETS" | jq -c 'map(
+            if . == "StandaloneOSX" or . == "iOS"
+            then { runner: "macos", target: . }
+            else { runner: "main", target: . }
+            end
+          )' > mapped.json
+
+          jq -n \
+            --arg main "$MAIN" \
+            --arg macos "$MACOS" \
+            --slurpfile items mapped.json '
+              $items[0]
+              | group_by(.runner)
+              | map({
+                  (if .[0].runner == "main" then $main else $macos end): map(.target)
+                })
+              | add
+            ' > grouped.json
+
+          echo "📦 Grouped BuildTargets:"
+          cat grouped.json
+
+          echo "validBuildTargets<<EOF" >> "$GITHUB_OUTPUT"
+          cat grouped.json >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: 📋 Summary of Build Target Validation
+        if: always()
+        run: |
+          INVALID_TARGETS="${INVALID_TARGETS:-}"
+          GROUPED_FILE="grouped.json"
+
+          echo ""
+          echo "📋 Build Targets Validation Summary"
+          echo "──────────────────────────────────────"
+
+          if [ -f "$GROUPED_FILE" ]; then
+            echo "🧮 Grouped Build Targets by OS"
+            echo "────────────────────────────"
+
+            jq -r '
+              to_entries[] |
+              "🖥️  \(.key):\n" +
+              (.value | map("   • " + .) | join("\n"))
+            ' "$GROUPED_FILE"
+          else
+            echo "⚠️ No grouped Build Target data available."
+          fi
+
+          if [ -n "$INVALID_TARGETS" ]; then
+            echo "────────────────────────────"
+            echo "⚠️ Invalid Build Targets (ignored):"
+            for p in $INVALID_TARGETS; do echo "   • $p"; done
+            echo "────────────────────────────"
+          fi

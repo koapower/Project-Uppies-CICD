@@ -1,0 +1,71 @@
+name: 🌀 Dry Release
+
+on:
+  workflow_call:
+    inputs:
+      runnerMain:
+        type: string
+        required: false
+      simulateResult:
+        description: "Simulate whether the release succeeds or fails"
+        required: true
+        default: 'success'
+        type: string
+    outputs:
+      releaseErrorMessage:
+        description: "Simulated release error message"
+        value: ${{ jobs.dry_release.outputs.releaseErrorMessage }}
+
+jobs:
+  dry_release:
+    name: 🧪 Simulate Release
+    runs-on: ${{ inputs.runnerMain }}
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      releaseErrorMessage: ${{ steps.simulate.outputs.releaseErrorMessage }}
+    steps:
+      - name: Simulate Release Outcome
+        id: simulate
+        run: |
+          RESULT="${{ inputs.simulateResult }}"
+          MESSAGE=""
+
+          case "$RESULT" in
+            success)
+              MESSAGE=""
+              echo "✅ Simulating successful release."
+              ;;
+            no_artifacts)
+              MESSAGE="No artifacts found"
+              echo "❌ Simulating: No artifacts found."
+              ;;
+            api_failure)
+              MESSAGE="Failed to create or fetch GitHub Release"
+              echo "❌ Simulating: API failure."
+              ;;
+            upload_failure)
+              MESSAGE="One or more upload steps failed"
+              echo "❌ Simulating: Upload failure."
+              ;;
+            unknown_failure)
+              MESSAGE="Unknown release failure"
+              echo "❌ Simulating: Unknown failure."
+              ;;
+            *)
+              MESSAGE="Unknown simulation input"
+              echo "❌ Invalid simulateResult input: $RESULT"
+              ;;
+          esac
+
+          echo "releaseErrorMessage=$MESSAGE" >> $GITHUB_OUTPUT
+
+      - name: Optional Summary Output
+        run: |
+          if [[ -n "${{ steps.simulate.outputs.releaseErrorMessage }}" ]]; then
+            echo "### ❌ Simulated Release Failure" >> $GITHUB_STEP_SUMMARY
+            echo "${{ steps.simulate.outputs.releaseErrorMessage }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ✅ Simulated Release Success" >> $GITHUB_STEP_SUMMARY
+          fi

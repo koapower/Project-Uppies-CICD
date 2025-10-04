@@ -1,0 +1,11 @@
+{
+  "tests": {
+    "editMode": {
+      "path": "Assets/Tests/Editor"
+    },
+    "playMode": {
+      "path": "Assets/Tests/PlayMode"
+    },
+    "timeoutMinutes": 15
+  }
+}

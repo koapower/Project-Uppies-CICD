@@ -1,0 +1,20 @@
+name: "Normalize Artifact Layout"
+description: "Normalize the artifact layout for release per-platform only."
+
+inputs:
+  artifactDir:
+    description: "Directory where the artifacts are stored."
+    required: true
+    type: string
+
+runs:
+  using: "composite"
+  steps:
+    - name: Make script executable
+      shell: bash
+      run: chmod +x "${{ github.action_path }}/normalize-artifact-layout.sh"
+
+    - name: Normalize Artifact Layout
+      shell: bash
+      run: |
+        "${{ github.action_path }}/normalize-artifact-layout.sh" "${{ inputs.artifactDir }}"

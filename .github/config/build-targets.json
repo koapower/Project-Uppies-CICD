@@ -1,0 +1,26 @@
+{
+  "Android": {
+    "minimumBuildType": "preview"
+  },
+  "WebGL": {
+    "minimumBuildType": "preview"
+  },
+  "StandaloneLinux64-Client": {
+    "minimumBuildType": "preview"
+  },
+  "StandaloneLinux64-Server": {
+    "minimumBuildType": "preview"
+  },
+  "StandaloneWindows": {
+    "minimumBuildType": "preview"
+  },
+  "StandaloneWindows64": {
+    "minimumBuildType": "preview"
+  },
+  "StandaloneOSX": {
+    "minimumBuildType": "preview"
+  },
+  "iOS": {
+    "minimumBuildType": "preview"
+  }
+}

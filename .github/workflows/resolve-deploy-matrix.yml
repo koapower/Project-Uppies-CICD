@@ -1,0 +1,102 @@
+name: 🧮 Resolve Deploy Matrix
+
+on:
+  workflow_call:
+    inputs:
+      runnerMain:
+        type: string
+        required: true
+      runnerMacos:
+        type: string
+        required: true
+      validTargets:
+        type: string
+        required: true
+    outputs:
+      matrix:
+        value: ${{ jobs.resolve.outputs.matrix }}
+      requiresCombinedArtifact:
+        value: ${{ jobs.resolve.outputs.requiresCombinedArtifact }}
+      requiredBuildTargets:
+        value: ${{ jobs.resolve.outputs.requiredBuildTargets }}
+
+jobs:
+  resolve:
+    name: Resolve Deploy Matrix
+    runs-on: ${{ inputs.runnerMain }}
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+      requiresCombinedArtifact: ${{ steps.set.outputs.requiresCombinedArtifact }}
+      requiredBuildTargets: ${{ steps.set.outputs.requiredBuildTargets }}
+
+    steps:
+      - name: 📁 Checkout repo
+        uses: actions/checkout@v4
+
+      - id: set
+        run: |
+          DEPLOY_TARGETS='${{ inputs.validTargets }}'
+          CONFIG_FILE=".github/config/deploy-targets.json"
+          FALLBACK_URL="https://raw.githubusercontent.com/avalin/unity-ci-templates/main/.github/config/deploy-targets.json"
+
+          echo "🔍 Checking for local config file..."
+          if [ -f "$CONFIG_FILE" ]; then
+            echo "✅ Found local config file: $CONFIG_FILE"
+          else
+            echo "⚠️ Not found. Downloading from: $FALLBACK_URL"
+            mkdir -p "$(dirname "$CONFIG_FILE")"
+            curl -sSL "$FALLBACK_URL" -o "$CONFIG_FILE"
+          fi
+
+          MATRIX='['
+          COMBINED_NEEDED=false
+          BUILD_TARGET_SET=()
+
+          # Helper: check if element is in array
+          contains() { local e match="$1"; shift; for e; do [[ "$e" == "$match" ]] && return 0; done; return 1; }
+
+          for TARGET in $(echo "$DEPLOY_TARGETS" | jq -r '.[]'); do
+            if [ "$TARGET" = "testflight" ]; then
+              OS="${{ inputs.runnerMacos }}"
+            else
+              OS="${{ inputs.runnerMain }}"
+            fi
+
+            COMBINED=$(jq -r --arg t "$TARGET" '.[$t].requiresCombinedArtifact // false' "$CONFIG_FILE")
+            BUILD_TARGETS=$(jq -c --arg t "$TARGET" '.[$t].compatibleBuildTargets' "$CONFIG_FILE")
+
+            MATRIX+='{"target":"'"$TARGET"'","os":"'"$OS"'","requiresCombinedArtifact":"'"$COMBINED"'","requiredBuildTargets":'"$BUILD_TARGETS"'},'
+
+            if [ "$COMBINED" = "true" ]; then
+              COMBINED_NEEDED=true
+            fi
+
+            for p in $(echo "$BUILD_TARGETS" | jq -r '.[]'); do
+              if ! contains "$p" "${BUILD_TARGET_SET[@]}"; then
+                BUILD_TARGET_SET+=("$p")
+              fi
+            done
+          done
+
+          MATRIX="${MATRIX%,}]"
+
+          # Convert BUILD_TARGET_SET array to JSON
+          if [ "${#BUILD_TARGET_SET[@]}" -eq 0 ]; then
+            REQUIRED_BUILD_TARGETS='[]'
+          else
+            REQUIRED_BUILD_TARGETS=$(printf '%s\n' "${BUILD_TARGET_SET[@]}" | jq -R . | jq -s .)
+          fi
+
+          # Compact JSON (no newlines) for GitHub output
+          REQUIRED_BUILD_TARGETS_COMPACT=$(echo "$REQUIRED_BUILD_TARGETS" | jq -c .)
+
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          echo "requiresCombinedArtifact=$COMBINED_NEEDED" >> $GITHUB_OUTPUT
+          echo "requiredBuildTargets=$REQUIRED_BUILD_TARGETS_COMPACT" >> $GITHUB_OUTPUT
+
+          echo "✅ Resolved matrix: $MATRIX"
+          echo "✅ Requires combined artifact: $COMBINED_NEEDED"
+          echo "✅ Required build targets: $REQUIRED_BUILD_TARGETS_COMPACT"

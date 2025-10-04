@@ -1,0 +1,34 @@
+name: Check Git Tag Exists
+description: Checks if a Git tag exists in the specified GitHub repository.
+
+inputs:
+  version:
+    description: The Git tag version to check (e.g., v1.2.3).
+    required: true
+  repository:
+    description: The GitHub repository in owner/repo format.
+    required: true
+  github_token:
+    description: GitHub token to authenticate API requests.
+    required: true
+
+outputs:
+  exists:
+    value: ${{ steps.run_check.outputs.exists }}
+    description: 'true if the tag exists, false if not'
+
+runs:
+  using: composite
+  steps:
+    - name: Make script executable
+      shell: bash
+      run: chmod +x "${{ github.action_path }}/check-tag-exists.sh"
+
+    - name: Run check-tag-exists.sh
+      id: run_check
+      shell: bash
+      run: |
+        VERSION="${{ inputs.version }}"
+        REPO="${{ inputs.repository }}"
+        export GITHUB_TOKEN="${{ inputs.github_token }}"
+        "${{ github.action_path }}/check-tag-exists.sh" "$VERSION" "$REPO"
