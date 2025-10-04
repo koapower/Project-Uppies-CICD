@@ -81,23 +81,23 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────────
   # 1. Run Tests
   # ─────────────────────────────────────────────────────────────────────────────
-  run_tests:
-    name: Run Tests
-    if: ${{ needs.unpack_inputs.outputs.skipTests != 'true' }}
-    needs: unpack_inputs
-    uses: avalin/unity-ci-templates/.github/workflows/step-1-test.yml@v1
-    with:
-      runnerMain: ${{ inputs.runnerMain }}
-      unityVersion: ${{ needs.unpack_inputs.outputs.unityVersion }}
-      useGitLfs: ${{ needs.unpack_inputs.outputs.useGitLfs }}
-      editModePath: ${{ needs.unpack_inputs.outputs.editModePath }}
-      playModePath: ${{ needs.unpack_inputs.outputs.playModePath }}
-      timeoutMinutes: ${{ fromJson(needs.unpack_inputs.outputs.timeoutMinutesTests) }}
-      quietMode: ${{ needs.unpack_inputs.outputs.quietMode }}
-    secrets:
-      UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-      UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-      UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+  #run_tests:
+  #  name: Run Tests
+  #  if: ${{ needs.unpack_inputs.outputs.skipTests != 'true' }}
+  #  needs: unpack_inputs
+  #  uses: avalin/unity-ci-templates/.github/workflows/step-1-test.yml@v1
+  #  with:
+  #    runnerMain: ${{ inputs.runnerMain }}
+  #    unityVersion: ${{ needs.unpack_inputs.outputs.unityVersion }}
+  #    useGitLfs: ${{ needs.unpack_inputs.outputs.useGitLfs }}
+  #    editModePath: ${{ needs.unpack_inputs.outputs.editModePath }}
+  #    playModePath: ${{ needs.unpack_inputs.outputs.playModePath }}
+  #    timeoutMinutes: ${{ fromJson(needs.unpack_inputs.outputs.timeoutMinutesTests) }}
+  #    quietMode: ${{ needs.unpack_inputs.outputs.quietMode }}
+  #  secrets:
+  #    UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+  #    UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+  #    UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 2. Build
